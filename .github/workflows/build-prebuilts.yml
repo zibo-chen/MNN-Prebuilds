@@ -1,0 +1,593 @@
+name: Build MNN Prebuilts
+
+on:
+  push:
+    tags:
+      - '*'
+      - '!Android*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag/version to build (leave empty for current HEAD)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  # Minimal MNN build flags for OCR inference only (no LLM, no train, no tools)
+  BASE_CMAKE_ARGS: >-
+    -DMNN_SEP_BUILD=OFF
+    -DMNN_BUILD_TOOLS=OFF
+    -DMNN_BUILD_DEMO=OFF
+    -DMNN_BUILD_TEST=OFF
+    -DMNN_BUILD_BENCHMARK=OFF
+    -DMNN_BUILD_QUANTOOLS=OFF
+    -DMNN_BUILD_CONVERTER=OFF
+    -DMNN_PORTABLE_BUILD=ON
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      VERSION: ${{ steps.get_version.outputs.VERSION }}
+    steps:
+    - name: Get version
+      id: get_version
+      run: |
+        if [[ -n "${{ inputs.tag }}" ]]; then
+          echo "VERSION=${{ inputs.tag }}" >> $GITHUB_OUTPUT
+        elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+          echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        else
+          echo "VERSION=dev" >> $GITHUB_OUTPUT
+        fi
+
+  # ============================================================
+  # Linux x86_64
+  # ============================================================
+  linux-x86_64:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-linux-x86_64
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=ON
+        make -j$(nproc)
+
+    - name: Build dynamic library
+      run: |
+        mkdir -p build-dynamic && cd build-dynamic
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=ON
+        make -j$(nproc)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp build-dynamic/libMNN.so ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # Linux aarch64 (cross-compile)
+  # ============================================================
+  linux-aarch64:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-linux-aarch64
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Install cross-compilation toolchain
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=OFF \
+          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+          -DCMAKE_SYSTEM_NAME=Linux \
+          -DCMAKE_SYSTEM_PROCESSOR=aarch64
+        make -j$(nproc)
+
+    - name: Build dynamic library
+      run: |
+        mkdir -p build-dynamic && cd build-dynamic
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=OFF \
+          -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
+          -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
+          -DCMAKE_SYSTEM_NAME=Linux \
+          -DCMAKE_SYSTEM_PROCESSOR=aarch64
+        make -j$(nproc)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp build-dynamic/libMNN.so ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # Windows x86_64 (MSVC)
+  # ============================================================
+  windows-x86_64:
+    needs: [setup]
+    runs-on: windows-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-windows-x86_64
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
+
+    - name: Build static library (MT)
+      run: |
+        mkdir build-static
+        cd build-static
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=OFF `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=ON
+        ninja MNN
+
+    - name: Build dynamic library (MT)
+      run: |
+        mkdir build-dynamic
+        cd build-dynamic
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=ON `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=ON
+        ninja MNN
+
+    - name: Package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/lib"
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/include"
+        Copy-Item build-static/MNN.lib "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        Copy-Item build-dynamic/MNN.lib "${{ env.PACKAGE }}/lib/MNN.lib"
+        Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
+        Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
+        Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.zip
+
+  # ============================================================
+  # Windows i686 (MSVC 32-bit)
+  # ============================================================
+  windows-i686:
+    needs: [setup]
+    runs-on: windows-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-windows-i686
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x86
+
+    - name: Build static library (MT)
+      run: |
+        mkdir build-static
+        cd build-static
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=OFF `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=OFF `
+          -DMNN_USE_AVX=OFF `
+          -DMNN_USE_AVX2=OFF `
+          -DMNN_USE_AVX512=OFF
+        ninja MNN
+
+    - name: Build dynamic library (MT)
+      run: |
+        mkdir build-dynamic
+        cd build-dynamic
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=ON `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=OFF `
+          -DMNN_USE_AVX=OFF `
+          -DMNN_USE_AVX2=OFF `
+          -DMNN_USE_AVX512=OFF
+        ninja MNN
+
+    - name: Package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/lib"
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/include"
+        Copy-Item build-static/MNN.lib "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        Copy-Item build-dynamic/MNN.lib "${{ env.PACKAGE }}/lib/MNN.lib"
+        Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
+        Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
+        Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.zip
+
+  # ============================================================
+  # macOS Universal (x86_64 + arm64)
+  # ============================================================
+  macos-universal:
+    needs: [setup]
+    runs-on: macos-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-macos-universal
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static arm64
+      run: |
+        mkdir -p build-static-arm64 && cd build-static-arm64
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_METAL=ON \
+          -DMNN_ARM82=ON \
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Build static x86_64
+      run: |
+        mkdir -p build-static-x64 && cd build-static-x64
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=ON \
+          -DMNN_METAL=ON \
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Build dynamic arm64
+      run: |
+        mkdir -p build-dynamic-arm64 && cd build-dynamic-arm64
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_METAL=ON \
+          -DMNN_ARM82=ON \
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Build dynamic x86_64
+      run: |
+        mkdir -p build-dynamic-x64 && cd build-dynamic-x64
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=ON \
+          -DMNN_METAL=ON \
+          -DCMAKE_OSX_ARCHITECTURES=x86_64
+        make -j$(sysctl -n hw.ncpu)
+
+    - name: Create universal binaries and package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+
+        # Static: merge into universal .a
+        lipo -create \
+          build-static-arm64/libMNN.a \
+          build-static-x64/libMNN.a \
+          -output ${{ env.PACKAGE }}/lib/libMNN.a
+
+        # Dynamic: merge into universal .dylib
+        lipo -create \
+          build-dynamic-arm64/libMNN.dylib \
+          build-dynamic-x64/libMNN.dylib \
+          -output ${{ env.PACKAGE }}/lib/libMNN.dylib
+
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # iOS arm64
+  # ============================================================
+  ios-arm64:
+    needs: [setup]
+    runs-on: macos-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-ios-arm64
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DCMAKE_TOOLCHAIN_FILE=../cmake/ios.toolchain.cmake \
+          -DMNN_METAL=ON \
+          -DARCHS="arm64" \
+          -DENABLE_BITCODE=0 \
+          -DMNN_ARM82=ON \
+          -DMNN_USE_THREAD_POOL=OFF \
+          -DCMAKE_SYSTEM_PROCESSOR=arm64
+        make MNN -j$(sysctl -n hw.ncpu)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # iOS arm64 Simulator
+  # ============================================================
+  ios-arm64-sim:
+    needs: [setup]
+    runs-on: macos-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-ios-arm64-sim
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DCMAKE_SYSTEM_NAME=iOS \
+          -DCMAKE_OSX_SYSROOT=iphonesimulator \
+          -DCMAKE_OSX_ARCHITECTURES=arm64 \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+          -DMNN_METAL=ON \
+          -DMNN_ARM82=ON \
+          -DMNN_USE_THREAD_POOL=OFF \
+          -DCMAKE_SYSTEM_PROCESSOR=arm64
+        make MNN -j$(sysctl -n hw.ncpu)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # Android arm64-v8a
+  # ============================================================
+  android-arm64:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-android-arm64-v8a
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_ARM82=ON \
+          -DMNN_BUILD_FOR_ANDROID_COMMAND=ON \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI="arm64-v8a" \
+          -DANDROID_STL=c++_static \
+          -DANDROID_NATIVE_API_LEVEL=android-21 \
+          -DANDROID_TOOLCHAIN=clang
+        make -j$(nproc)
+
+    - name: Build dynamic library
+      run: |
+        mkdir -p build-dynamic && cd build-dynamic
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_ARM82=ON \
+          -DMNN_BUILD_FOR_ANDROID_COMMAND=ON \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI="arm64-v8a" \
+          -DANDROID_STL=c++_static \
+          -DANDROID_NATIVE_API_LEVEL=android-21 \
+          -DANDROID_TOOLCHAIN=clang
+        make -j$(nproc)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp build-dynamic/libMNN.so ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # Android armeabi-v7a
+  # ============================================================
+  android-armv7:
+    needs: [setup]
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-android-armeabi-v7a
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - name: Build static library
+      run: |
+        mkdir -p build-static && cd build-static
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=OFF \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_BUILD_FOR_ANDROID_COMMAND=ON \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI="armeabi-v7a" \
+          -DANDROID_STL=c++_static \
+          -DANDROID_NATIVE_API_LEVEL=android-21 \
+          -DANDROID_TOOLCHAIN=clang
+        make -j$(nproc)
+
+    - name: Build dynamic library
+      run: |
+        mkdir -p build-dynamic && cd build-dynamic
+        cmake .. ${{ env.BASE_CMAKE_ARGS }} \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DMNN_BUILD_SHARED_LIBS=ON \
+          -DMNN_USE_SSE=OFF \
+          -DMNN_BUILD_FOR_ANDROID_COMMAND=ON \
+          -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK/build/cmake/android.toolchain.cmake \
+          -DANDROID_ABI="armeabi-v7a" \
+          -DANDROID_STL=c++_static \
+          -DANDROID_NATIVE_API_LEVEL=android-21 \
+          -DANDROID_TOOLCHAIN=clang
+        make -j$(nproc)
+
+    - name: Package
+      run: |
+        mkdir -p ${{ env.PACKAGE }}/{lib,include}
+        cp build-static/libMNN.a ${{ env.PACKAGE }}/lib/
+        cp build-dynamic/libMNN.so ${{ env.PACKAGE }}/lib/
+        cp -r include/MNN ${{ env.PACKAGE }}/include/
+        tar czf ${{ env.PACKAGE }}.tar.gz ${{ env.PACKAGE }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.tar.gz
+
+  # ============================================================
+  # Upload all artifacts to GitHub Release
+  # ============================================================
+  release:
+    needs:
+      - setup
+      - linux-x86_64
+      - linux-aarch64
+      - windows-x86_64
+      - windows-i686
+      - macos-universal
+      - ios-arm64
+      - ios-arm64-sim
+      - android-arm64
+      - android-armv7
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+        merge-multiple: true
+
+    - name: List artifacts
+      run: ls -lh artifacts/
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ needs.setup.outputs.VERSION }}
+        name: MNN ${{ needs.setup.outputs.VERSION }} Prebuilts
+        body: |
+          Prebuilt MNN ${{ needs.setup.outputs.VERSION }} static and dynamic libraries.
+
+          Built from upstream [alibaba/MNN@${{ needs.setup.outputs.VERSION }}](https://github.com/alibaba/MNN/tree/${{ needs.setup.outputs.VERSION }}).
+
+          ## Included platforms
+
+          | Package | OS | Arch | Static | Dynamic |
+          |---------|-----|------|--------|---------|
+          | `linux-x86_64` | Linux | x86_64 | libMNN.a | libMNN.so |
+          | `linux-aarch64` | Linux | aarch64 | libMNN.a | libMNN.so |
+          | `windows-x86_64` | Windows | x86_64 | MNN_static.lib (MT) | MNN.dll + MNN.lib (MT) |
+          | `windows-i686` | Windows | i686 | MNN_static.lib (MT) | MNN.dll + MNN.lib (MT) |
+          | `macos-universal` | macOS | x86_64+arm64 | libMNN.a | libMNN.dylib |
+          | `ios-arm64` | iOS | arm64 | libMNN.a | — |
+          | `ios-arm64-sim` | iOS Simulator | arm64 | libMNN.a | — |
+          | `android-arm64-v8a` | Android | arm64-v8a | libMNN.a | libMNN.so |
+          | `android-armeabi-v7a` | Android | armeabi-v7a | libMNN.a | libMNN.so |
+
+          Each package includes `lib/` (libraries) and `include/MNN/` (headers).
+        files: artifacts/*
+        draft: false

@@ -1,0 +1,81 @@
+name: Sync Upstream MNN Tags
+
+on:
+  # Run daily at 08:00 UTC
+  schedule:
+    - cron: '0 8 * * *'
+  # Allow manual trigger
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  sync-tags:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configure git
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+
+    - name: Add upstream remote
+      run: |
+        git remote add upstream https://github.com/alibaba/MNN.git || true
+        git fetch upstream --tags
+
+    - name: Sync new tags and trigger builds
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Get all upstream tags (version-like only: X.Y.Z pattern)
+        upstream_tags=$(git tag -l --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+' || true)
+
+        # Get tags already in our repo (on origin)
+        git fetch origin --tags
+        local_tags=$(git tag -l)
+
+        new_tags=()
+        for tag in $upstream_tags; do
+          if echo "$local_tags" | grep -qx "$tag"; then
+            continue
+          fi
+          new_tags+=("$tag")
+        done
+
+        if [ ${#new_tags[@]} -eq 0 ]; then
+          echo "No new upstream tags found."
+          exit 0
+        fi
+
+        echo "Found ${#new_tags[@]} new tag(s): ${new_tags[*]}"
+
+        for tag in "${new_tags[@]}"; do
+          echo "=== Syncing tag: $tag ==="
+
+          # Sync the master/main branch to include the tagged commit
+          git fetch upstream "refs/tags/$tag:refs/tags/$tag"
+
+          # Push the tag to origin
+          git push origin "refs/tags/$tag"
+
+          echo "Pushed tag $tag to origin."
+        done
+
+        # The build-prebuilts.yml workflow triggers on tag push,
+        # so each new tag will automatically start a build.
+        echo "Done. Build workflows will be triggered by the pushed tags."
+
+    - name: Sync master branch
+      run: |
+        git fetch upstream master || git fetch upstream main
+        # Only fast-forward, never force push
+        git checkout master 2>/dev/null || git checkout main
+        git merge --ff-only upstream/master 2>/dev/null || git merge --ff-only upstream/main 2>/dev/null || echo "Cannot fast-forward, skipping branch sync"
+        git push origin HEAD || echo "Branch push failed, this is non-critical"
