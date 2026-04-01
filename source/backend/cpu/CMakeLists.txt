@@ -39,7 +39,8 @@ IF(NOT DEFINED IOS_ARCH)
 ENDIF()
 
 # ARM82 Assemblies
-IF(MNN_ARM82)
+# Skip ARM82 assembly with native MSVC — it cannot compile GNU-syntax .S files
+IF(MNN_ARM82 AND NOT (WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "MSVC"))
     IF(CMAKE_SYSTEM_PROCESSOR MATCHES "^armv7" OR ARCHS MATCHES "^armv7(;armv7s)?" OR CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64" OR ARCHS STREQUAL "arm64" OR ARCHS STREQUAL "ARM64")
         target_compile_options(MNNCPU PRIVATE -DENABLE_ARMV82)
         include(${CMAKE_CURRENT_LIST_DIR}/../arm82/CMakeLists.txt)
