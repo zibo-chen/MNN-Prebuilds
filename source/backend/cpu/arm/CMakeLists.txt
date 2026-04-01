@@ -1,3 +1,10 @@
+# MSVC's native assembler (armasm64) cannot compile GNU-syntax .S files.
+# Skip ARM assembly when using native MSVC (not clang-cl) on Windows.
+# clang-cl sets CMAKE_C_COMPILER_ID to "Clang" even with MSVC=true.
+if(WIN32 AND CMAKE_C_COMPILER_ID STREQUAL "MSVC")
+    return()
+endif()
+
 IF(NOT DEFINED ARCHS)
   set(ARCHS ${CMAKE_SYSTEM_PROCESSOR})
 ENDIF()

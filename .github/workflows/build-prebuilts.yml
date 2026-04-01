@@ -262,7 +262,7 @@ jobs:
         path: ${{ env.PACKAGE }}.zip
 
   # ============================================================
-  # Windows aarch64 (MSVC ARM64 cross-compile)
+  # Windows aarch64 (clang-cl ARM64 cross-compile)
   # ============================================================
   windows-aarch64:
     needs: [setup]
@@ -290,6 +290,12 @@ jobs:
           -DMNN_USE_AVX=OFF `
           -DMNN_USE_AVX2=OFF `
           -DMNN_USE_AVX512=OFF `
+          -DCMAKE_C_COMPILER=clang-cl `
+          -DCMAKE_CXX_COMPILER=clang-cl `
+          -DCMAKE_ASM_COMPILER=clang-cl `
+          -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc `
+          -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc `
+          -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc `
           -DCMAKE_SYSTEM_NAME=Windows `
           -DCMAKE_SYSTEM_PROCESSOR=ARM64
         ninja MNN
@@ -306,6 +312,12 @@ jobs:
           -DMNN_USE_AVX=OFF `
           -DMNN_USE_AVX2=OFF `
           -DMNN_USE_AVX512=OFF `
+          -DCMAKE_C_COMPILER=clang-cl `
+          -DCMAKE_CXX_COMPILER=clang-cl `
+          -DCMAKE_ASM_COMPILER=clang-cl `
+          -DCMAKE_C_COMPILER_TARGET=aarch64-pc-windows-msvc `
+          -DCMAKE_CXX_COMPILER_TARGET=aarch64-pc-windows-msvc `
+          -DCMAKE_ASM_COMPILER_TARGET=aarch64-pc-windows-msvc `
           -DCMAKE_SYSTEM_NAME=Windows `
           -DCMAKE_SYSTEM_PROCESSOR=ARM64
         ninja MNN
