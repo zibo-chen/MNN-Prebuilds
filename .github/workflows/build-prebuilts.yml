@@ -262,6 +262,71 @@ jobs:
         path: ${{ env.PACKAGE }}.zip
 
   # ============================================================
+  # Windows aarch64 (MSVC ARM64 cross-compile)
+  # ============================================================
+  windows-aarch64:
+    needs: [setup]
+    runs-on: windows-latest
+    env:
+      PACKAGE: mnn-${{ needs.setup.outputs.VERSION }}-windows-aarch64
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    - uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: amd64_arm64
+
+    - name: Build static library (MT)
+      run: |
+        mkdir build-static
+        cd build-static
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=OFF `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=OFF `
+          -DMNN_USE_AVX=OFF `
+          -DMNN_USE_AVX2=OFF `
+          -DMNN_USE_AVX512=OFF `
+          -DCMAKE_SYSTEM_NAME=Windows `
+          -DCMAKE_SYSTEM_PROCESSOR=ARM64
+        ninja MNN
+
+    - name: Build dynamic library (MT)
+      run: |
+        mkdir build-dynamic
+        cd build-dynamic
+        cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          -DCMAKE_BUILD_TYPE=Release `
+          -DMNN_BUILD_SHARED_LIBS=ON `
+          -DMNN_WIN_RUNTIME_MT=ON `
+          -DMNN_USE_SSE=OFF `
+          -DMNN_USE_AVX=OFF `
+          -DMNN_USE_AVX2=OFF `
+          -DMNN_USE_AVX512=OFF `
+          -DCMAKE_SYSTEM_NAME=Windows `
+          -DCMAKE_SYSTEM_PROCESSOR=ARM64
+        ninja MNN
+
+    - name: Package
+      shell: pwsh
+      run: |
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/lib"
+        New-Item -ItemType Directory -Force -Path "${{ env.PACKAGE }}/include"
+        Copy-Item build-static/MNN.lib "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        Copy-Item build-dynamic/MNN.lib "${{ env.PACKAGE }}/lib/MNN.lib"
+        Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
+        Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
+        Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.PACKAGE }}
+        path: ${{ env.PACKAGE }}.zip
+
+  # ============================================================
   # macOS Universal (x86_64 + arm64)
   # ============================================================
   macos-universal:
@@ -549,6 +614,7 @@ jobs:
       - linux-aarch64
       - windows-x86_64
       - windows-i686
+      - windows-aarch64
       - macos-universal
       - ios-arm64
       - ios-arm64-sim
@@ -582,6 +648,7 @@ jobs:
           | `linux-aarch64` | Linux | aarch64 | libMNN.a | libMNN.so |
           | `windows-x86_64` | Windows | x86_64 | MNN_static.lib (MT) | MNN.dll + MNN.lib (MT) |
           | `windows-i686` | Windows | i686 | MNN_static.lib (MT) | MNN.dll + MNN.lib (MT) |
+          | `windows-aarch64` | Windows | aarch64 | MNN_static.lib (MT) | MNN.dll + MNN.lib (MT) |
           | `macos-universal` | macOS | x86_64+arm64 | libMNN.a | libMNN.dylib |
           | `ios-arm64` | iOS | arm64 | libMNN.a | — |
           | `ios-arm64-sim` | iOS Simulator | arm64 | libMNN.a | — |
