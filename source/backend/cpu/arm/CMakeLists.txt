@@ -40,7 +40,9 @@ if(CMAKE_SYSTEM_PROCESSOR MATCHES "^armv7" OR ARCHS MATCHES "^armv7(;armv7s)?")
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64" OR ARCHS STREQUAL "arm64" OR ARCHS STREQUAL "ARM64")
     message(STATUS "Enabling AArch64 Assemblies")
 
-    if (MNN_KLEIDIAI)
+    # KleidiAI assembly uses ARM assembler syntax (DCD, bare labels) that is
+    # incompatible with clang-cl / Clang's integrated assembler on Windows.
+    if (MNN_KLEIDIAI AND NOT WIN32)
        include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/KleidiAI.cmake)
        download_kleidiai_and_collect_sources()
        if(MNN_KLEIDIAI_DEFAULT_ON)
