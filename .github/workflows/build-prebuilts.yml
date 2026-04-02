@@ -290,6 +290,7 @@ jobs:
           -DMNN_USE_AVX=OFF `
           -DMNN_USE_AVX2=OFF `
           -DMNN_USE_AVX512=OFF `
+          -DMNN_KLEIDIAI=OFF `
           -DCMAKE_C_COMPILER=clang-cl `
           -DCMAKE_CXX_COMPILER=clang-cl `
           -DCMAKE_ASM_COMPILER=clang-cl `
@@ -312,6 +313,7 @@ jobs:
           -DMNN_USE_AVX=OFF `
           -DMNN_USE_AVX2=OFF `
           -DMNN_USE_AVX512=OFF `
+          -DMNN_KLEIDIAI=OFF `
           -DCMAKE_C_COMPILER=clang-cl `
           -DCMAKE_CXX_COMPILER=clang-cl `
           -DCMAKE_ASM_COMPILER=clang-cl `
