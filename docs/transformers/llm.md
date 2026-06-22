@@ -38,6 +38,7 @@
     *   **LoRA**：通过 `--lora_path` 合并或分离 LoRA 权重。
     *   **Embeding**：对于目前主流的8b以下模型，采用了`Tie-Embeding`技术，默认不会导出`embeddings_bf16.bin`，而是复用`llm.mnn.weight`中的`lm`权重，需要提升embed精度可以设置 `--seperate_embed` 分离出`embeddings_bf16.bin`。
     *   **GPTQ**：通过 `--gptq_path` 应用预量化好的 GPTQ 权重。
+    *   **MNNConvert 工具**：推荐优先使用本地编译的 `MNNConvert`（在 MNN 根目录下 `mkdir build && cd build && cmake .. -DMNN_BUILD_CONVERTER=ON && make -j16`），`llmexport.py` 默认会到 `../../../build/` 下查找，也可通过 `--mnnconvert` 显式指定路径。
     *   **手动转换**：如果直接导出 `mnn` 失败，或者需要fp16/fp32精度的模型，可先导出 `onnx`，再用 `MNNConvert` 工具手动转换。
 
 ---
@@ -47,11 +48,11 @@
 此步骤是编译 MNN 的 C++ 推理引擎，使其支持 LLM 推理功能。
 
 1.  **配置编译选项**：
-    在标准的 MNN 编译命令中，**必须添加 `-DMNN_BUILD_LLM=true`** 以启用 LLM 支持。
+    在标准的 MNN 编译命令中，**必须添加 `-DMNN_BUILD_LLM=ON`** 以启用 LLM 支持。
     *   **Omni 模型**：如果需要支持图像/音频输入，还需添加 `-DMNN_BUILD_LLM_OMNI=ON`。
     *   **平台优化**：
-        *   **x86 (Mac/Linux)**：可添加 `-DMNN_AVX512=true` 以利用 AVX512 指令集加速。
-        *   **Android**：可添加 `-DMNN_OPENCL=true` 以利用 GPU 加速。
+        *   **x86 (Mac/Linux)**：可添加 `-DMNN_AVX512=ON` 以利用 AVX512 指令集加速。
+        *   **Android**：可添加 `-DMNN_OPENCL=ON` 以利用 GPU 加速。
         *   **iOS**：可添加 `-DMNN_METAL=ON` 以利用 GPU 加速。
         *   **Web (WASM)**：使用 `emcmake` 并配置 `-DMNN_FORBID_MULTI_THREAD=ON` 等特定选项。
 
@@ -59,7 +60,7 @@
     以 Linux/Mac 为例：
     ```bash
     mkdir build && cd build
-    cmake .. -DMNN_BUILD_LLM=true -DMNN_AVX512=true # 根据平台调整选项
+    cmake .. -DMNN_BUILD_LLM=ON -DMNN_AVX512=ON # 根据平台调整选项
     make -j16
     ```
     编译完成后，会生成核心库文件（如 `libMNN.so`, `libllm.so`）。
@@ -172,7 +173,12 @@ python llmexport.py \
 ```
 
 ### 功能
-- 直接转为mnn模型，使用`--export mnn`，注意，你需要先安装pymnn或者通过`--mnnconvert`选项指定MNNConvert工具的地址，两种条件必须满足其中一个。如果没有安装pymnn并且没有通过`--mnnconvert`指定MNNConvert工具的地址，那么llmexport.py脚本会在目录"../../../build/"下寻找MNNConvert工具，需保证该目录下存在MNNConvert文件。此方案目前支持导出4bit和8bit模型
+- 直接转为mnn模型，使用`--export mnn`。**推荐优先使用本地编译的 MNNConvert 工具**：在 MNN 根目录下创建 `build/` 目录并执行编译，编译时需打开 `-DMNN_BUILD_CONVERTER=ON`，例如：
+  ```bash
+  mkdir build && cd build
+  cmake .. -DMNN_BUILD_CONVERTER=ON && make -j16
+  ```
+  编译完成后 `build/` 目录下会生成 `MNNConvert` 可执行文件，`llmexport.py` 默认会在 `../../../build/` 下查找该工具；也可以通过 `--mnnconvert` 选项显式指定 MNNConvert 路径。若未提供本地 MNNConvert，脚本会回退到 pymnn（需先安装 `pip install MNN`）。此方案目前支持导出4bit和8bit模型。
 - 如果直接转为mnn模型遇到问题，或者需要其他bits数的量化（如5bit/6bit），可以先将模型先转为onnx模型，使用`--export onnx`，然后使用./MNNConvert工具将onnx模型转为mnn模型:
 
 ```
@@ -282,7 +288,7 @@ python3 gguf2mnn.py --gguf ~/third/llama.cpp/build/ggml-model-Q4_K.gguf --mnn_di
 
 若需要开启Omni功能（支持图像/音频输入），增加`MNN_BUILD_LLM_OMNI`选项
 ```
--DMNN_BUILD_LLM=ON -D MNN_BUILD_LLM_OMNI=ON
+-DMNN_BUILD_LLM=ON -DMNN_BUILD_LLM_OMNI=ON
 ```
 
 #### mac / linux / windows
@@ -291,7 +297,7 @@ python3 gguf2mnn.py --gguf ~/third/llama.cpp/build/ggml-model-Q4_K.gguf --mnn_di
 ```
 make build
 cd build
-cmake ../ -DMNN_BUILD_LLM=true
+cmake ../ -DMNN_BUILD_LLM=ON
 make -j16
 ```
 
@@ -299,7 +305,7 @@ x86架构额外加 `MNN_AVX512` 的宏：
 ```
 make build
 cd build
-cmake ../ -DMNN_BUILD_LLM=true -DMNN_AVX512=true
+cmake ../ -DMNN_BUILD_LLM=ON -DMNN_AVX512=ON
 make -j16
 ```
 
@@ -307,7 +313,7 @@ make -j16
 ```
 cd project/android
 mkdir build_64
-../build_64.sh -DMNN_BUILD_LLM=true -DMNN_OPENCL=true -DMNN_USE_LOGCAT=true
+../build_64.sh -DMNN_BUILD_LLM=ON -DMNN_OPENCL=ON -DMNN_USE_LOGCAT=ON
 ```
 高通设备部分视觉模型支持NPU功能，可增加`MNN_QNN`宏启用QNN功能。QNN运行分2种模式：
 - 在线编译QNN模型：运行其它后端统一的mnn模型，运行时进行编译构图，通过需要较长的构图启动时间，主要用于功能正确性验证。
@@ -315,12 +321,12 @@ mkdir build_64
 ```
 cd project/android
 mkdir build_64
-../build_64.sh -DMNN_BUILD_LLM=true -DMNN_OPENCL=true -DMNN_QNN=true -DMNN_WITH_PLUGIN=true -DMNN_USE_LOGCAT=true
+../build_64.sh -DMNN_BUILD_LLM=ON -DMNN_OPENCL=ON -DMNN_QNN=ON -DMNN_WITH_PLUGIN=ON -DMNN_USE_LOGCAT=ON
 ```
 
 #### iOS: 参考 transformers/llm/engine/ios/README.md
 ```
-sh package_scripts/ios/buildiOS.sh -DMNN_BUILD_LLM=true
+sh package_scripts/ios/buildiOS.sh -DMNN_BUILD_LLM=ON
 ```
 
 #### Web
@@ -330,7 +336,7 @@ sh package_scripts/ios/buildiOS.sh -DMNN_BUILD_LLM=true
 
 ```
 mkdir buildweb
-emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DMNN_FORBID_MULTI_THREAD=ON -DMNN_USE_THREAD_POOL=OFF -DMNN_USE_SSE=OFF -DMNN_BUILD_LLM=true
+emcmake cmake .. -DCMAKE_BUILD_TYPE=Release -DMNN_FORBID_MULTI_THREAD=ON -DMNN_USE_THREAD_POOL=OFF -DMNN_USE_SSE=OFF -DMNN_BUILD_LLM=ON
 make -j16
 ```
 
@@ -936,14 +942,108 @@ make -j16
 ```
 
 
-使用 `npu/generate_llm_qnn.py` 构建 qnn 模型
-eg:
+使用 `npu/generate_llm_qnn.py` 构建 qnn 模型。该脚本支持三种使用模式：转换 LLM 语言模型、转换 Visual 视觉模型、以及通过自定义 `input_json` 转换任意模型。
 
-```
+##### 参数说明
+
+| 参数 | 类型 | 默认值 | 说明 |
+| :--- | :--- | :----- | :--- |
+| `--model` | str | (必填) | MNN 模型所在目录路径 |
+| `--soc_id` | int | (必填) | 目标设备的 SOC ID，如 8Gen3 为 57 |
+| `--dsp_arch` | str | (必填) | 目标设备的 DSP 架构，如 8Gen3 为 v75 |
+| `--model_name` | str | `llm.mnn` | 要转换的模型文件名，如 `llm.mnn` 或 `visual.mnn` |
+| `--image_sizes` | str | `512x512` | 视觉模型的输入图片尺寸，支持多尺寸，如 `"224x224,384x384,512x512"` |
+| `--input_json` | str | `""` | 自定义输入 shape 的 JSON 文件路径，非空时使用自定义模式 |
+| `--external_file` | str | `""` | 外部权重文件名（相对于 `--model` 目录），配合 `--input_json` 使用 |
+| `--mnn_path` | str | `../../../build/` | MNN 编译产物路径 |
+| `--cache_path` | str | `tmp` | 转换过程中的临时缓存目录 |
+| `--chunk_size` | int | `128` | NPU 的 chunk 大小 |
+| `--max_history_token` | int | `0` | 最大历史 token 数，0 表示不限制 |
+
+##### 用法一：转换 LLM 语言模型
+
+默认模式，将 `llm.mnn` 转换为 QNN 模型。脚本会自动从模型目录下的 `llm_config.json` 读取 `hidden_size` 等配置信息，生成对应的输入描述并完成转换。
+
+```bash
 cd ${MNN_ROOT}
 cd transformers/llm/export
-python3 npu/generate_llm_qnn.py --model model --soc_id=57 --dsp_arch=v75
+python3 npu/generate_llm_qnn.py \
+    --model /path/to/Qwen3.5-2B-MNN/ \
+    --soc_id=57 \
+    --dsp_arch=v75
 ```
+
+转换完成后，会在模型目录下生成 `qnn/` 子目录和 `config_qnn.json` 配置文件。
+
+##### 用法二：转换 Visual 视觉模型
+
+通过指定 `--model_name visual.mnn` 进入视觉模型转换模式。需要通过 `--image_sizes` 指定支持的输入图片尺寸（格式为 `WxH`，多个尺寸用逗号分隔）。目前支持 Qwen2.5-VL、Qwen3-VL、Qwen3.5-VL 和 FastVLM 系列视觉模型。
+
+```bash
+cd ${MNN_ROOT}
+cd transformers/llm/export
+python3 npu/generate_llm_qnn.py \
+    --model /path/to/Qwen2.5-VL-3B-MNN/ \
+    --soc_id=57 \
+    --dsp_arch=v75 \
+    --image_sizes 256x256 \
+    --model_name visual.mnn
+```
+
+支持多个图片尺寸：
+```bash
+python3 npu/generate_llm_qnn.py \
+    --model /path/to/Qwen2.5-VL-3B-MNN/ \
+    --soc_id=57 \
+    --dsp_arch=v75 \
+    --image_sizes "224x224,384x384,512x512" \
+    --model_name visual.mnn
+```
+
+转换完成后，会在模型目录下生成 `qnn/` 子目录和 `config_qnn.json`（其中 `visual_model` 字段指向转换后的 QNN 视觉模型）。
+
+##### 用法三：使用自定义 input_json 转换任意模型
+
+当需要转换非标准模型或自定义输入 shape 时，可以通过 `--input_json` 指定一个 JSON 文件来描述模型的输入输出信息。此模式下需要同时指定 `--model_name`（模型文件名）和 `--external_file`（权重文件名）。
+
+input_json 文件格式示例：
+```json
+{
+    "configs": [
+        {
+            "inputs": [
+                {"name": "input_0", "shape": [1, 3, 224, 224]},
+                {"name": "input_1", "shape": [1, 10], "type": "int"}
+            ],
+            "outputs": ["output_0"]
+        },
+        {
+            "inputs": [
+                {"name": "input_0", "shape": [1, 3, 384, 384]},
+                {"name": "input_1", "shape": [1, 20], "type": "int"}
+            ],
+            "outputs": ["output_0"]
+        }
+    ]
+}
+```
+
+其中 `configs` 数组中的每个元素代表一组输入 shape 配置，脚本会为每组配置生成对应的 QNN 模型。`type` 字段可选，默认为 float，支持 `"int"` 等类型。
+
+使用示例：
+```bash
+cd ${MNN_ROOT}
+cd transformers/llm/export
+python3 npu/generate_llm_qnn.py \
+    --model /path/to/MyModel-MNN/ \
+    --soc_id=57 \
+    --dsp_arch=v75 \
+    --input_json /path/to/input.json \
+    --model_name my_model.mnn \
+    --external_file my_model.mnn.weight
+```
+
+> **注意**：使用 `--input_json` 模式时，脚本不会自动生成 `config_qnn.json`，需要用户自行配置运行时的配置文件。
 
 目标设备`soc_id` 和 `dsp_arch` 可在高通官方查询，如下为一些设备的参考
 

@@ -131,12 +131,21 @@ class GeometryGather : public GeometryComputer {
 public:
     virtual bool onCompute(const Op* op, const std::vector<Tensor*>& inputs, const std::vector<Tensor*>& outputs,
                            Context& context, CommandBuffer& res) const override {
+        if (inputs.size() == 1) {
+            std::shared_ptr<Command> cmdP(new Command);
+            auto& cmd = *cmdP;
+            cmd.op = op;
+            cmd.inputs = inputs;
+            cmd.outputs = outputs;
+            res.command.emplace_back(std::move(cmdP));
+            return true;
+        }
         _computeGather(inputs, outputs, context, res, op);
         return true;
     }
     virtual bool onRecompute(const Op* op, const std::vector<Tensor*>& inputs, const std::vector<Tensor*>& outputs,
                              Context& context, CommandBuffer& cmd) const override {
-        if (cmd.command.size() != 1) {
+        if (cmd.command.size() != 1 || inputs.size() == 1) {
             return false;
         }
         int axis = 0;
@@ -362,13 +371,17 @@ public:
             paramSize = dimCount;
         }
         // recompute reshape
+        auto desOrigin = TensorUtils::getDescribeOrigin(reshapeIndice.get());
+        desOrigin->mem = nullptr;
         auto des = TensorUtils::getDescribe(reshapeIndice.get());
-        des->extra.offset = 0;
+        desOrigin->offset = 0;
         des->memoryType = Tensor::InsideDescribe::MEMORY_VIRTUAL;
         des->regions = {GeometryComputerUtils::makeRawAddressRef(indice, 0, mSliceN * indiceNd)};
         // recompute broadcast
+        desOrigin = TensorUtils::getDescribeOrigin(broadcastStride.get());
+        desOrigin->mem = nullptr;
         des = TensorUtils::getDescribe(broadcastStride.get());
-        des->extra.offset = 0;
+        desOrigin->offset = 0;
         des->memoryType = Tensor::InsideDescribe::MEMORY_VIRTUAL;
         des->regions[0].origin = constStride.get();
         des->regions[0].size[0] = 1;

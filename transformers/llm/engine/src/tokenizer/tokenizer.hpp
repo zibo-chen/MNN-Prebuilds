@@ -15,6 +15,7 @@
 #include <unordered_map>
 #include <iostream>
 // #include <string_view>
+#include <cstdint>
 #include <cstring>
 class string_view_ {
 public:
@@ -152,6 +153,7 @@ public:
     std::string apply_chat_template(const ChatMessages& messages, bool add_generation_prompt = true) const;
     std::string apply_chat_template(const std::string& user_content, const std::string& system_prompt = "") const;
     void set_chat_template(const std::string& tpl, const std::string& eos = "", const std::string& context = "");
+    void set_chat_template_context(const std::string& context_json);
     const std::string& chat_template() const { return chat_template_; }
     const std::string& chat_template_eos() const { return chat_template_eos_; }
 protected:

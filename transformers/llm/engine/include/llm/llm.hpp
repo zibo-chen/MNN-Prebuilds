@@ -25,7 +25,9 @@
 #include <MNN/expr/ExecutorScope.hpp>
 
 namespace MNN {
+struct KVMeta;
 namespace Transformer {
+using MNN::KVMeta;
 
 // ChatMessage: pair<role, content> for multi-turn conversation.
 //   first  = role: "system", "user", "assistant", "tool", etc.
@@ -99,7 +101,6 @@ enum class LlmStatus {
 enum class MatchStrictLevel : int;
 enum class NgramSelectRule : int;
 
-struct KVMeta;
 struct LlmContext {
     // forward
     int prompt_len = 0;
@@ -114,6 +115,7 @@ struct LlmContext {
     int64_t prefill_us = 0;
     int64_t decode_us = 0;
     int64_t sample_us = 0;
+    int64_t ttfa_us = 0;
     float pixels_mp = 0;
     float audio_input_s = 0;
     // tokens
@@ -123,6 +125,8 @@ struct LlmContext {
     std::string generate_str;
     // llm status
     LlmStatus status = LlmStatus::NOT_LOADED;
+    // log buffer (per-instance, no locking needed)
+    std::string log_buffer;
 };
 struct GenerationParams;
 class MNN_PUBLIC Llm {
@@ -131,6 +135,9 @@ public:
         Prefill,
         Decode
     };
+    // Log buffer interface: retrieve accumulated log and clear the buffer.
+    // Only effective when LLM_LOG_TO_STRING macro is enabled during compilation.
+    std::string getLog();
     static Llm* createLLM(const std::string& config_path);
     static void destroy(Llm* llm);// For Windows RT mode should use destroy
     Llm(std::shared_ptr<LlmConfig> config);
@@ -162,6 +169,11 @@ public:
     std::vector<int> generate(MNN::Express::VARP input_embeds, int max_tokens = -1);
     bool stoped();
     bool reuse_kv();
+    // Prompt cache: call after decode completes to sync the cached text with the
+    // full conversation (including assistant response). Optional — the cache
+    // self-updates after generate(), but this allows callers with post-processed
+    // response text (e.g. deleteThinkPart) to provide a more accurate version.
+    void syncPromptCache(const ChatMessages& chat_prompts);
     // config function
     std::string dump_config();
     bool set_config(const std::string& content);
@@ -188,12 +200,15 @@ public:
 protected:
     void setChatTemplate();
     void initRuntime();
-    void setRuntimeHint(std::shared_ptr<Express::Executor::RuntimeManager> &rtg);
+    void setRuntimeHint(std::shared_ptr<Express::Executor::RuntimeManager> &rtg, bool mllm = false);
     std::shared_ptr<LlmContext> mContext;
     std::shared_ptr<KVMeta> mMeta;
     std::shared_ptr<LlmConfig> mConfig;
     std::shared_ptr<Tokenizer> mTokenizer;
     std::shared_ptr<DiskEmbedding> mDiskEmbedding;
+    std::shared_ptr<DiskEmbedding> mPleEmbedding;
+    Express::VARP mPleInput; // PLE embeddings for current input
+    Express::VARP mTextEmbedsForPle; // Pure text embeddings for PLE projection
     std::shared_ptr<Sampler> mSampler;
     std::shared_ptr<Express::Executor::RuntimeManager> mRuntimeManager, mProcessorRuntimeManager;
     std::shared_ptr<Express::Module> mModule;
@@ -215,12 +230,16 @@ protected:
     friend class LookaheadGeneration;
     friend class MtpGeneration;
     friend class EagleGeneration;
+    friend class DFlashGeneration;
+    friend class Omni;
     std::vector<Express::VARP> forwardVec(const std::vector<int>& input_ids);
     std::vector<Express::VARP> forwardVec(MNN::Express::VARP input_embeds);
 private:
     std::shared_ptr<Generation> mGenerationStrategy;
     void setSpeculativeConfig();
     void updateContext(int seq_len, int gen_len);
+    bool checkFile(const std::string& path, const char* name);
+
 private:
     bool mInSpec = false;
     int mDraftLength = 4;
@@ -234,6 +253,9 @@ private:
     int mPrefixLength;
     bool mIsPrefixFileExist = false;
     void completePrefixWrite();
+    // Prompt cache state
+    std::string mCachedPromptText;
+    void updateCachedPromptText(const ChatMessages& chat_prompts, size_t history_before);
 };
 
 // Embedding start

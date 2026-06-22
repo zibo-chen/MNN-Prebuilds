@@ -24,14 +24,35 @@ class LlmTokenizer(PreTrainedTokenizer):
                 self.stop_ids.append(eot_id[1])
         except:
             pass
+        from collections.abc import Iterable
         if hasattr(self.tokenizer, 'generation_config') and self.tokenizer.generation_config is not None:
             eos_token_id = self.tokenizer.generation_config.eos_token_id
-            from collections.abc import Iterable
             if isinstance(eos_token_id, int):
                 self.stop_ids.append(eos_token_id)
             elif isinstance(eos_token_id, Iterable):
                 for id in eos_token_id:
                     self.stop_ids.append(id)
+        gen_cfg_path = os.path.join(tokenizer_path, 'generation_config.json')
+        if os.path.isfile(gen_cfg_path):
+            import json
+            try:
+                with open(gen_cfg_path, 'r') as f:
+                    gen_cfg = json.load(f)
+                eos_token_id = gen_cfg.get('eos_token_id')
+                if isinstance(eos_token_id, int):
+                    self.stop_ids.append(eos_token_id)
+                elif isinstance(eos_token_id, Iterable):
+                    for id in eos_token_id:
+                        self.stop_ids.append(id)
+            except Exception:
+                pass
+        # gemma4: <turn|> (token 106) is end-of-turn
+        try:
+            turn_ids = self.tokenizer.encode('<turn|>', add_special_tokens=False)
+            if len(turn_ids) == 1 and turn_ids[0] not in self.stop_ids:
+                self.stop_ids.append(turn_ids[0])
+        except:
+            pass
         if model_type == 'glm_ocr':
             user_ids = self.tokenizer.encode('<|user|>', add_special_tokens=False)
             if len(user_ids) == 1:
@@ -123,6 +144,20 @@ class LlmTokenizer(PreTrainedTokenizer):
         return entries
 
     @staticmethod
+    def _generate_nfc_table():
+        import unicodedata
+        entries = []
+        for cp in range(0x110000):
+            try:
+                ch = chr(cp)
+                normalized = unicodedata.normalize('NFC', ch)
+                if normalized != ch:
+                    entries.append((cp, normalized.encode('utf-8')))
+            except (ValueError, OverflowError):
+                pass
+        return entries
+
+    @staticmethod
     def _generate_nfd_table():
         import unicodedata
         entries = []
@@ -202,6 +237,9 @@ class LlmTokenizer(PreTrainedTokenizer):
                 if ntype in ('NFKC', 'Precompiled', 'NFKD'):
                     fp.write(struct.pack('<B', 6))
                     self._write_norm_table(fp, self._generate_nfkc_table())
+                elif ntype == 'NFC':
+                    fp.write(struct.pack('<B', 6))
+                    self._write_norm_table(fp, self._generate_nfc_table())
                 elif ntype == 'Prepend':
                     fp.write(struct.pack('<B', 2))
                     fp.write(pack_str(norm.get('prepend', '')))
@@ -244,6 +282,11 @@ class LlmTokenizer(PreTrainedTokenizer):
                     fp.write(struct.pack('<B', 7))
                     fp.write(struct.pack('<BBBB', 0, 0, 1, 0))
                     self._write_norm_table(fp, self._generate_nfd_table())
+                elif ntype == 'Strip':
+                    fp.write(struct.pack('<B', 8))
+                    fp.write(struct.pack('<BB',
+                        int(norm.get('strip_left', True)),
+                        int(norm.get('strip_right', True))))
                 else:
                     fp.write(struct.pack('<B', 0))
             write_normalizer_bin(fp, norm)

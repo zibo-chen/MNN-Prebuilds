@@ -26,13 +26,15 @@ private:
     const Convolution2DCommon* mCommon = nullptr;
     int mCi = 0;
     int mCo = 0;
-    bool mIsInt4 = false;
+    // Weight quant bit-width: 2 / 3 / 4 / 8. 0 if no quant info loaded.
+    int mQuantBits = 0;
     uint32_t mPadK = 0;
     uint32_t mPadN = 0;
     uint32_t mBlockSize = 1;
     uint32_t mBlockStride = 1;
     uint32_t mDecodeWeightStrideWords = 0;
     uint32_t mDecodeSubgroupSize = 1;
+    bool mUseSubgroup = true;
 
     std::shared_ptr<ConvolutionCommon::Int8Common> mQuantCommon;
 
