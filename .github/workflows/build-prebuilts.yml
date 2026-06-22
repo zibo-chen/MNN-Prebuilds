@@ -26,6 +26,11 @@ env:
     -DMNN_BUILD_QUANTOOLS=OFF
     -DMNN_BUILD_CONVERTER=OFF
     -DMNN_PORTABLE_BUILD=ON
+  # Avoid references to MSVC STL vector algorithm helper symbols such as
+  # __std_min_4i/__std_max_4i in distributed static libraries.
+  WINDOWS_COMPAT_CMAKE_ARGS: >-
+    -DCMAKE_C_FLAGS=/D_USE_STD_VECTOR_ALGORITHMS=0
+    -DCMAKE_CXX_FLAGS=/D_USE_STD_VECTOR_ALGORITHMS=0
 
 jobs:
   setup:
@@ -167,6 +172,7 @@ jobs:
         mkdir build-static
         cd build-static
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=OFF `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -178,6 +184,7 @@ jobs:
         mkdir build-dynamic
         cd build-dynamic
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=ON `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -194,6 +201,15 @@ jobs:
         Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - name: Validate static library has no MSVC STL vector helper refs
+      shell: pwsh
+      run: |
+        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        if ($bad) {
+          $bad
+          throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
 
     - uses: actions/upload-artifact@v4
       with:
@@ -222,6 +238,7 @@ jobs:
         mkdir build-static
         cd build-static
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=OFF `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -236,6 +253,7 @@ jobs:
         mkdir build-dynamic
         cd build-dynamic
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=ON `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -255,6 +273,15 @@ jobs:
         Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - name: Validate static library has no MSVC STL vector helper refs
+      shell: pwsh
+      run: |
+        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        if ($bad) {
+          $bad
+          throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
 
     - uses: actions/upload-artifact@v4
       with:
@@ -283,6 +310,7 @@ jobs:
         mkdir build-static
         cd build-static
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=OFF `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -306,6 +334,7 @@ jobs:
         mkdir build-dynamic
         cd build-dynamic
         cmake .. -G Ninja ${{ env.BASE_CMAKE_ARGS }} `
+          ${{ env.WINDOWS_COMPAT_CMAKE_ARGS }} `
           -DCMAKE_BUILD_TYPE=Release `
           -DMNN_BUILD_SHARED_LIBS=ON `
           -DMNN_WIN_RUNTIME_MT=ON `
@@ -334,6 +363,15 @@ jobs:
         Copy-Item build-dynamic/MNN.dll "${{ env.PACKAGE }}/lib/MNN.dll"
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
+
+    - name: Validate static library has no MSVC STL vector helper refs
+      shell: pwsh
+      run: |
+        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        if ($bad) {
+          $bad
+          throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
 
     - uses: actions/upload-artifact@v4
       with:
