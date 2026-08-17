@@ -202,13 +202,20 @@ jobs:
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
 
-    - name: Validate static library has no MSVC STL vector helper refs
+    - name: Validate distributed static library
       shell: pwsh
       run: |
-        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        $library = "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        $bad = & dumpbin /symbols $library 2>$null | Select-String '__std_(min|max)(_element)?_4'
         if ($bad) {
           $bad
           throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
+        $contents = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($library))
+        $pdbRefs = @([regex]::Matches($contents, '(?i)[A-Za-z0-9_.-]+\.pdb') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+        if ($pdbRefs.Count -gt 0) {
+          $pdbRefs
+          throw "MNN_static.lib references external compiler PDB files"
         }
 
     - uses: actions/upload-artifact@v4
@@ -274,13 +281,20 @@ jobs:
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
 
-    - name: Validate static library has no MSVC STL vector helper refs
+    - name: Validate distributed static library
       shell: pwsh
       run: |
-        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        $library = "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        $bad = & dumpbin /symbols $library 2>$null | Select-String '__std_(min|max)(_element)?_4'
         if ($bad) {
           $bad
           throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
+        $contents = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($library))
+        $pdbRefs = @([regex]::Matches($contents, '(?i)[A-Za-z0-9_.-]+\.pdb') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+        if ($pdbRefs.Count -gt 0) {
+          $pdbRefs
+          throw "MNN_static.lib references external compiler PDB files"
         }
 
     - uses: actions/upload-artifact@v4
@@ -364,13 +378,20 @@ jobs:
         Copy-Item -Recurse include/MNN "${{ env.PACKAGE }}/include/"
         Compress-Archive -Path ${{ env.PACKAGE }} -DestinationPath "${{ env.PACKAGE }}.zip"
 
-    - name: Validate static library has no MSVC STL vector helper refs
+    - name: Validate distributed static library
       shell: pwsh
       run: |
-        $bad = & dumpbin /symbols "${{ env.PACKAGE }}/lib/MNN_static.lib" 2>$null | Select-String '__std_(min|max)(_element)?_4'
+        $library = "${{ env.PACKAGE }}/lib/MNN_static.lib"
+        $bad = & dumpbin /symbols $library 2>$null | Select-String '__std_(min|max)(_element)?_4'
         if ($bad) {
           $bad
           throw "MNN_static.lib references MSVC STL vector algorithm helper symbols"
+        }
+        $contents = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($library))
+        $pdbRefs = @([regex]::Matches($contents, '(?i)[A-Za-z0-9_.-]+\.pdb') | ForEach-Object { $_.Value } | Sort-Object -Unique)
+        if ($pdbRefs.Count -gt 0) {
+          $pdbRefs
+          throw "MNN_static.lib references external compiler PDB files"
         }
 
     - uses: actions/upload-artifact@v4
